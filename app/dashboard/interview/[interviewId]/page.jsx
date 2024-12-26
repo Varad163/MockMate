@@ -30,6 +30,7 @@ function Interview({ params }) {
         } finally {
             setLoading(false);
         }
+        const interviewData={interviewData}
     };
 
     return (

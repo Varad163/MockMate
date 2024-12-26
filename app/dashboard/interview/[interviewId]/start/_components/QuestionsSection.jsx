@@ -1,7 +1,17 @@
-import { Lightbulb } from 'lucide-react';
+import { Lightbulb, Volume2 } from 'lucide-react';
 import React from 'react';
 
 function QuestionsSection({ mockInterviewQuestion, activeQuestionIndex }) {
+    
+    const texttospeach = (text) => {
+        if ('speechSynthesis' in window) {
+            const speech = new SpeechSynthesisUtterance(text);
+            window.speechSynthesis.speak(speech);
+        } else {
+            alert('Sorry, your browser does not support text-to-speech');
+        }
+    };
+
     return (
         mockInterviewQuestion && (
             <div className="p-5 border rounded-lg w-full md:w-3/4 lg:w-1/2 justify-start my-10 mx-0">
@@ -17,14 +27,24 @@ function QuestionsSection({ mockInterviewQuestion, activeQuestionIndex }) {
                     ))}
                 </div>
                 <div className="mt-5">
-                    <h2 className='my-5 text-md md:text-lg'>{mockInterviewQuestion[activeQuestionIndex]?.question}</h2>
+                    <h2 className="my-5 text-md md:text-lg">
+                        {mockInterviewQuestion[activeQuestionIndex]?.question}
+                    </h2>
+                    <Volume2
+                        onClick={() =>
+                            texttospeach(mockInterviewQuestion[activeQuestionIndex]?.question)
+                        }
+                        className="cursor-pointer"
+                    />
                 </div>
-                <div className='border rounded-lg p-5 bg-blue-100 mt-20'>
-                    <h2 className='flex gap-2 items-center text-primary'>
-                        <Lightbulb/>
+                <div className="border rounded-lg p-5 bg-blue-100 mt-20">
+                    <h2 className="flex gap-2 items-center text-primary">
+                        <Lightbulb />
                         <strong>Note:</strong>
                     </h2>
-                    <h2 className='text-sm text-primary my-2' >{process.env.NEXT_PUBLIC_QUESTION_NOTE}</h2>
+                    <h2 className="text-sm text-primary my-2">
+                        {process.env.NEXT_PUBLIC_QUESTION_NOTE || 'No additional notes available.'}
+                    </h2>
                 </div>
             </div>
         )
