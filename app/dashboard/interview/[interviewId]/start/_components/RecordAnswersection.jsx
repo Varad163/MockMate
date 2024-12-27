@@ -3,22 +3,19 @@ import useSpeechToText from 'react-hook-speech-to-text';
 import Webcam from 'react-webcam';
 import { WebcamIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ChatSession } from '@google/generative-ai';
 import { chatSession } from '@/utils/GeminiAIModal';
 import { UserAnswer } from '@/utils/schema';
 import { useUser } from '@clerk/nextjs';
 import { uuid } from 'drizzle-orm/pg-core';
 import { db } from '@/utils/db';
-import StartInterview from '../page';
+import moment from 'moment';
 
-
-function RecordAnswerSection(mockInterviewQuestion, activeQuestionIndex,interviewData) {
+function RecordAnswerSection(mockInterviewQuestion, activeQuestionIndex, interviewData) {
   const [micPermission, setMicPermission] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
   const [answer, setAnswer] = useState('');
   const { user } = useUser();
   const [loading, setLoading] = useState(false);
-
 
   const {
     error,
@@ -30,18 +27,11 @@ function RecordAnswerSection(mockInterviewQuestion, activeQuestionIndex,intervie
   } = useSpeechToText({
     continuous: true,
     crossBrowser: true,
-    googleApiKey: "AIzaSyCFk8LyPHRH53PgJgPkfT7nCnUpEFLT9cg", // Ensure the API key is valid
+    googleApiKey: process.env.YOUR_GOOGLE_API_KEY, // Replace with your API key
     useLegacyResults: false,
   });
 
-  // Log out relevant values to debug
   useEffect(() => {
-    console.log('Error:', error);
-    console.log('Is Recording:', isRecording);
-    console.log('Results:', results);
-    console.log('Interim Result:', interimResult);
-
-
     const checkMicPermissions = async () => {
       try {
         const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
@@ -55,7 +45,7 @@ function RecordAnswerSection(mockInterviewQuestion, activeQuestionIndex,intervie
     };
 
     checkMicPermissions();
-  }, [error, isRecording, results, interimResult]);
+  }, []);
 
   const renderError = () => {
     if (error) {
@@ -72,82 +62,64 @@ function RecordAnswerSection(mockInterviewQuestion, activeQuestionIndex,intervie
   };
 
   const SaveUserAnswer = async () => {
-    if (isRecording) {
-      setLoading(true);
-      stopSpeechToText()
-      if (showAnswer?.length < 10) {
-        setLoading(false);
-        toast('Error while saving your answer,Please record again')
-        return;
+    setLoading(true);
+
+    try {
+      if (!answer || answer.length < 10) {
+        throw new Error('Answer is too short. Please provide a valid answer.');
       }
 
-      const feedbackprompt = "Question:" + mockInterviewQuestion[activeQuestionIndex]?.question + ", UserAnswer:" + showAnswer + ", Depends on Question and user answer for give interview question" +
-        "please give us rating for answer and feedback as area of improvement if any" + "in just 3 to 5 lines to improve it in JSON format with rating field and feedback field";
-      const result = await chatSession.sendMessage(feedbackprompt);
-      const jsonMockResp = (result.response.text()).replace('```json', '').replace('```', '')
-      
-      console.log(jsonMockResp);
-     return jsonMockResp;
+      const feedbackPrompt =
+        `Question: ${mockInterviewQuestion[activeQuestionIndex]?.question}, ` +
+        `UserAnswer: ${answer}. Please provide a rating and feedback in JSON format in 3 to 5 line. `;
+      const result = await chatSession.sendMessage(feedbackPrompt);
+
+      const jsonResponse = JSON.parse(
+        result.response.text().replace('```json', '').replace('```', '')
+
+      );
+      console.log(jsonResponse);
+      const dbResponse = await db.insert(UserAnswer).values({
+        mockIdRef: interviewData?.mockId,
+        question: mockInterviewQuestion[activeQuestionIndex]?.question,
+        correctAns: mockInterviewQuestion[activeQuestionIndex]?.answer,
+        userAns: answer,
+        feedback: jsonResponse?.feedback,
+        rating: jsonResponse?.rating,
+        userEmail: user.primaryEmailAddress.emailAddress,
+        createdAt: moment().format('YYYY-MM-DD'),
+      });
+
+      console.log('Saved to DB:', dbResponse);
+      alert('Answer saved successfully!');
+    } catch (error) {
+      console.error('Error saving answer:', error);
+      alert('Failed to save the answer. Please try again.');
+    } finally {
+      setLoading(false);
     }
-    
-
-    else {
-      startSpeechToText();
-    }
-    JsonFeedbackResp = JSON.parse(jsonMockResp);
-
-    const resp = await db.insert(UserAnswer).values({
-      
-      mockIdRef: interviewData?.mockId,
-      question: mockInterviewQuestion[activeQuestionIndex]?.question,
-      correctAns: mockInterviewQuestion[activeQuestionIndex]?.answer,
-      userAns: answer,
-      feedback: JsonFeedbackResp?.feedback,
-      rating: JsonFeedbackResp?.rating,
-      userEmail: user.primaryEmailAddress.emailAddress,
-      createdAt: moment().format('DD-MM-YYYY')
-    });
-
-    if (resp) {
-      toast.success('User Answer recorded successfully');
-      console.log(resp);
-    }
-    else (error)
-    console.log(error);
-
-
-    setLoading(false);
-
-  }
-
+  };
 
   return (
     <div>
       <div className="grid place-items-center mx-auto my-10 rounded-lg h-auto p-0 relative">
         <div className="relative w-96 h-48">
           <WebcamIcon width={400} height={300} className="absolute inset-0 text-gray-400" />
-          <Webcam
-            mirrored={true}
-            style={{
-              position: 'absolute',
-            }}
-          />
+          <Webcam mirrored style={{ position: 'absolute' }} />
         </div>
       </div>
 
       <div className="flex justify-center mt-5">
         <Button
           className="mt-20 mx-auto"
-          onClick={SaveUserAnswer}
+          onClick={isRecording ? stopSpeechToText : startSpeechToText}
         >
           {isRecording ? 'Stop Recording' : 'Start Recording'}
         </Button>
       </div>
 
-      {/* Display any error message */}
       {renderError()}
 
-      {/* Show the transcriptions */}
       {isRecording && micPermission && (
         <div style={{ marginTop: '20px' }}>
           <h3>Transcriptions:</h3>
@@ -155,17 +127,13 @@ function RecordAnswerSection(mockInterviewQuestion, activeQuestionIndex,intervie
             {results.map((result, index) => (
               <li key={index}>{result.transcript}</li>
             ))}
-            {/* Display interim result (in-progress transcription) */}
-            {interimResult && interimResult.trim() !== '' && (
-              <li style={{ fontStyle: 'italic', color: 'gray' }}>
-                {interimResult}
-              </li>
+            {interimResult && (
+              <li style={{ fontStyle: 'italic', color: 'gray' }}>{interimResult}</li>
             )}
           </ul>
         </div>
       )}
 
-      {/* Show Answer Button */}
       {!isRecording && results.length > 0 && (
         <div className="flex justify-center mt-5">
           <Button
@@ -173,18 +141,19 @@ function RecordAnswerSection(mockInterviewQuestion, activeQuestionIndex,intervie
               setShowAnswer((prev) => !prev);
               setAnswer(results.map((res) => res.transcript).join(' '));
             }}
-            className="mx-auto"
           >
             {showAnswer ? 'Hide Answer' : 'Show Answer'}
           </Button>
         </div>
       )}
 
-      {/* Display the final answer */}
       {showAnswer && (
         <div className="mt-5 text-center">
           <h3>Final Answer:</h3>
           <p>{answer}</p>
+          <Button onClick={SaveUserAnswer} disabled={loading}>
+            {loading ? 'Saving...' : 'Save Answer'}
+          </Button>
         </div>
       )}
     </div>
